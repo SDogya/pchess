@@ -17,7 +17,10 @@ from parallel_chess import (
     SingleAgentSelfPlayWrapper,
     random_opponent_policy,
 )
+import torch
 
+# Отключаем строгую проверку Simplex() из-за накопления fp32-ошибок на 4096 действиях
+torch.distributions.Distribution.set_default_validate_args(False)
 
 def run_demo(n_steps: int = 20, render: bool = True):
     env = SimultaneousChessEnv(render_mode="human" if render else "ansi", max_steps=200)

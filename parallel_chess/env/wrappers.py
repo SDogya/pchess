@@ -83,17 +83,16 @@ class SingleAgentSelfPlayWrapper(gym.Wrapper):
         return obs
 
     def action_masks(self) -> np.ndarray:
-        """Метод, который ищет sb3_contrib.ActionMasker"""
         board = self.env.board
         mask_4d = get_pseudo_legal_moves(board, self.agent_color)
 
         if self.agent_color == -1:
             mask_4d = mask_4d[::-1, :, ::-1, :]
 
-        flat = mask_4d.reshape(4096)
+        # Использовать flatten() вместо reshape(4096) для гарантии contiguous памяти
+        flat = mask_4d.flatten()
         
-        # --- ФИКС КРАША: Предохранитель от пустой маски ---
         if not np.any(flat):
-            flat[0] = True  # Фиктивный ход, чтобы PyTorch не сошел с ума
+            flat[0] = True 
             
         return flat
