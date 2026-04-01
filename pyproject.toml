@@ -1,0 +1,22 @@
+[project]
+name = "parallel-chess"
+version = "0.1.0"
+description = "Simultaneous-move chess environment for RL research"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=1.26",
+    "gymnasium>=0.29",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+rl = [
+    "stable-baselines3>=2.3",
+    "sb3-contrib>=2.3",   # MaskablePPO lives here
+    "torch>=2.2",
+]
+[tool.hatch.build.targets.wheel]
+packages = ["parallel_chess"]
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

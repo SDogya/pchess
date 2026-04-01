@@ -1,0 +1,39 @@
+# =========================
+# Python & Bytecode
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# =========================
+# Virtual Environments
+# =========================
+.venv/
+venv/
+
+
+
+# =========================
+# RL Models & Training Logs
+# =========================
+# Игнорируем сохраненные модели PPO (например, ppo_parallel_chess.zip)
+*.zip
+# Если потом прикрутишь TensorBoard или логи
+logs/
+tb_logs/
+*.log
+
+# =========================
+# IDEs & OS Files
+# =========================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# =========================
+# Packages & Distribution
+# =========================
+dist/
+build/
+*.egg-info/
