@@ -19,7 +19,8 @@ from parallel_chess import (
 
 
 def run_demo(n_steps: int = 20, render: bool = True):
-    env = SimultaneousChessEnv(render_mode="human" if render else "ansi", max_steps=200)
+    env = SimultaneousChessEnv(render_mode="human" if render else "ansi",
+                               max_steps=200)
 
     obs, _ = env.reset()
 
@@ -29,38 +30,56 @@ def run_demo(n_steps: int = 20, render: bool = True):
         legal_w = env.get_legal_moves(1)
         legal_b = env.get_legal_moves(-1)
 
-        move_w = legal_w[np.random.randint(len(legal_w))] if legal_w else (0, 0)
-        move_b = legal_b[np.random.randint(len(legal_b))] if legal_b else (0, 0)
+        move_w = legal_w[np.random.randint(len(legal_w))] if legal_w else (0,
+                                                                           0)
+        move_b = legal_b[np.random.randint(len(legal_b))] if legal_b else (0,
+                                                                           0)
 
-        obs, rewards, terminated, truncated, info = env.step({"white": move_w, "black": move_b})
+        obs, rewards, terminated, truncated, info = env.step({
+            "white": move_w,
+            "black": move_b
+        })
 
         total_rewards["white"] += rewards["white"]
         total_rewards["black"] += rewards["black"]
 
-        print(f"Step {step+1:3d} | W:{rewards['white']:+.1f}  B:{rewards['black']:+.1f} | {_fmt_info(info)}")
+        print(
+            f"Step {step+1:3d} | W:{rewards['white']:+.1f}  B:{rewards['black']:+.1f} | {_fmt_info(info)}"
+        )
 
         if render:
             env.render()
 
         if terminated or truncated:
-            print("Game over!", "White wins" if info["black_king_dead"] else "Black wins" if info["white_king_dead"] else "Draw/Truncated")
+            print(
+                "Game over!", "White wins" if info["black_king_dead"] else
+                "Black wins" if info["white_king_dead"] else "Draw/Truncated")
             break
 
-    print(f"\nTotal rewards — White: {total_rewards['white']:.1f}  Black: {total_rewards['black']:.1f}")
+    print(
+        f"\nTotal rewards — White: {total_rewards['white']:.1f}  Black: {total_rewards['black']:.1f}"
+    )
     env.close()
 
 
 def train_ppo(total_timesteps: int = 100_000):
     try:
-        from stable_baselines3 import PPO
+        from sb3_contrib import MaskablePPO
+        from sb3_contrib.common.wrappers import ActionMasker
     except ImportError:
-        print("Install RL deps: uv pip install -e '.[rl]'")
+        print("Install contrib: uv pip install sb3-contrib")
         return
 
-    base_env = SimultaneousChessEnv(max_steps=200)
-    env = SingleAgentSelfPlayWrapper(base_env, opponent_policy=random_opponent_policy)
+    def mask_fn(env: gym.Env) -> np.ndarray:
+        return env.unwrapped.action_masks()
 
-    model = PPO(
+    base_env = SimultaneousChessEnv(max_steps=200)
+    # Оборачиваем в SelfPlay
+    env = SingleAgentSelfPlayWrapper(base_env, opponent_policy=random_opponent_policy)
+    # Оборачиваем в ActionMasker (жестко блокирует нелегальные ходы)
+    env = ActionMasker(env, action_mask_fn=mask_fn)
+
+    model = MaskablePPO(
         "MlpPolicy",
         env,
         verbose=1,
@@ -69,6 +88,7 @@ def train_ppo(total_timesteps: int = 100_000):
         n_epochs=10,
         learning_rate=3e-4,
     )
+    print("Starting training with MaskablePPO...")
     model.learn(total_timesteps=total_timesteps)
     model.save("ppo_parallel_chess")
     print("Model saved to ppo_parallel_chess.zip")
@@ -87,7 +107,7 @@ def _fmt_info(info: dict) -> str:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--demo",  action="store_true")
+    parser.add_argument("--demo", action="store_true")
     parser.add_argument("--train", action="store_true")
     parser.add_argument("--no-render", action="store_true")
     parser.add_argument("--steps", type=int, default=100_000)

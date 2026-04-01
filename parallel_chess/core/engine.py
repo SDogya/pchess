@@ -28,6 +28,8 @@ class ParallelResolutionEngine:
             "black_captured": None,
             "white_king_dead": False,
             "black_king_dead": False,
+            "white_promoted": 0,
+            "black_promoted": 0,
         }
 
         legal_w = get_pseudo_legal_moves(board, 1)
@@ -41,8 +43,10 @@ class ParallelResolutionEngine:
         if move_w is None and move_b is None:
             return new_board, info
 
-        w_fr, w_ff, w_tr, w_tf = decode_move(*move_w) if move_w else (None,) * 4
-        b_fr, b_ff, b_tr, b_tf = decode_move(*move_b) if move_b else (None,) * 4
+        w_fr, w_ff, w_tr, w_tf = decode_move(
+            *move_w) if move_w else (None, ) * 4
+        b_fr, b_ff, b_tr, b_tf = decode_move(
+            *move_b) if move_b else (None, ) * 4
 
         # --- Mutual destruction: both target same square ---
         if move_w and move_b and (w_tr, w_tf) == (b_tr, b_tf):
@@ -54,7 +58,8 @@ class ParallelResolutionEngine:
             return new_board, info
 
         # --- Swap collision: pieces cross paths ---
-        if move_w and move_b and (w_tr, w_tf) == (b_fr, b_ff) and (b_tr, b_tf) == (w_fr, w_ff):
+        if (move_w and move_b and (w_tr, w_tf) == (b_fr, b_ff)
+                and (b_tr, b_tf) == (w_fr, w_ff)):
             info["swap_collision"] = True
             new_board[w_fr, w_ff] = EMPTY
             new_board[b_fr, b_ff] = EMPTY
@@ -78,7 +83,23 @@ class ParallelResolutionEngine:
                 info["black_captured"] = abs(captured)
 
         self._check_kings(board, new_board, info)
+
+        self._handle_promotions(new_board, info)  # <--- ДОБАВИТЬ ВЫЗОВ
+
         return new_board, info
+
+    def _handle_promotions(self, board: np.ndarray, info: dict):
+        # Белые пешки на 0-й строке становятся ферзями (5)
+        white_promotions = board[0, :] == 1
+        if np.any(white_promotions):
+            board[0, white_promotions] = 5
+            info["white_promoted"] = np.sum(white_promotions)
+
+        # Черные пешки на 7-й строке становятся ферзями (-5)
+        black_promotions = board[7, :] == -1
+        if np.any(black_promotions):
+            board[7, black_promotions] = -5
+            info["black_promoted"] = np.sum(black_promotions)
 
     def _validate_move(
         self,
@@ -99,8 +120,11 @@ class ParallelResolutionEngine:
             return None
         return move
 
-    def _check_kings(self, old_board: np.ndarray, new_board: np.ndarray, info: dict):
+    def _check_kings(self, old_board: np.ndarray, new_board: np.ndarray,
+                     info: dict):
         white_king_was = np.any(old_board == KING)
         black_king_was = np.any(old_board == -KING)
-        info["white_king_dead"] = white_king_was and not np.any(new_board == KING)
-        info["black_king_dead"] = black_king_was and not np.any(new_board == -KING)
+        info["white_king_dead"] = white_king_was and not np.any(
+            new_board == KING)
+        info["black_king_dead"] = black_king_was and not np.any(
+            new_board == -KING)

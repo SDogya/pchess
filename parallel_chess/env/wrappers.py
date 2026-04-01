@@ -17,15 +17,6 @@ def random_opponent_policy(board: np.ndarray, color: int) -> tuple[int, int]:
 
 
 class SingleAgentSelfPlayWrapper(gym.Wrapper):
-    """
-    Wraps SimultaneousChessEnv into a single-agent environment.
-    The wrapped agent always plays as white (from white's perspective).
-    Observation is inverted (*-1) when feeding to the opponent so the net
-    always sees itself as positive pieces moving "upward".
-
-    opponent_policy: callable(board: np.ndarray, color: int) -> (from_sq, to_sq)
-    """
-
     def __init__(
         self,
         env: SimultaneousChessEnv,
@@ -38,37 +29,69 @@ class SingleAgentSelfPlayWrapper(gym.Wrapper):
         self.opponent_color = -agent_color
 
         self.observation_space = env.observation_space
-        self.action_space = spaces.MultiDiscrete([64, 64])
+        # Плоское пространство для MaskablePPO
+        self.action_space = spaces.Discrete(4096)
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
         return self._agent_obs(obs), info
 
-    def step(self, action):
+    def step(self, action: int | np.integer):
+        action = int(action)  # Гарантируем чистый int для математики
+
+        # 1. Декодируем действие агента из плоского в координаты (from_sq, to_sq)
+        fr, ff = (action // 64) // 8, (action // 64) % 8
+        tr, tf = (action % 64) // 8, (action % 64) % 8
+
+        # 2. Если мы играем за черных, "разворачиваем" координаты обратно для движка
+        if self.agent_color == -1:
+            fr, tr = 7 - fr, 7 - tr
+
+        agent_move = (fr * 8 + ff, tr * 8 + tf)
+
+        # 3. Получаем ход оппонента
         board = self.env.board
-        opp_move = self.opponent_policy(board * self.opponent_color, self.opponent_color)
+        opp_obs = board * self.opponent_color
+        if self.opponent_color == -1:
+            opp_obs = np.flipud(opp_obs)
 
+        # Политика оппонента работает с оригинальной геометрией доски
+        opp_move = self.opponent_policy(board, self.opponent_color)
+
+        # 4. Отправляем в среду
         if self.agent_color == 1:
-            action_dict = {"white": action, "black": opp_move}
+            action_dict = {"white": agent_move, "black": opp_move}
         else:
-            action_dict = {"white": opp_move, "black": action}
+            action_dict = {"white": opp_move, "black": agent_move}
 
-        obs, rewards, terminated, truncated, info = self.env.step(action_dict)
-        agent_reward = rewards["white"] if self.agent_color == 1 else rewards["black"]
+        # Базовая среда теперь возвращает 0.0 вместо словаря
+        obs, _base_reward, terminated, truncated, info = self.env.step(action_dict)
 
-        return self._agent_obs(obs), agent_reward, terminated, truncated, info
+        # Достаем реальную награду конкретного агента из info
+        agent_reward = (
+            info["rewards"]["white"]
+            if self.agent_color == 1
+            else info["rewards"]["black"]
+        )
+
+        return self._agent_obs(obs), float(agent_reward), terminated, truncated, info
 
     def _agent_obs(self, obs: np.ndarray) -> np.ndarray:
-        # Always return board from agent's perspective (own pieces positive)
-        return obs * self.agent_color
+        obs = obs * self.agent_color
+        if self.agent_color == -1:
+            return np.flipud(obs)  # Черные всегда видят доску "снизу вверх"
+        return obs
 
-    def get_legal_action_mask(self) -> np.ndarray:
-        """
-        Returns flat boolean array of shape (64*64,) for action masking in PPO.
-        Useful with MaskablePPO from sb3-contrib.
-        """
+    def action_masks(self) -> np.ndarray:
+        """Метод, который ищет sb3_contrib.ActionMasker"""
         board = self.env.board
+        # Получаем маску легальных ходов (8, 8, 8, 8)
         mask_4d = get_pseudo_legal_moves(board, self.agent_color)
-        flat = mask_4d.reshape(64, 64)
-        # from_sq * 64 + to_sq indexing
-        return flat.flatten()
+
+        # Если играем за черных, нужно перевернуть строки (ranks) в маске,
+        # потому что сеть видит перевернутую доску
+        if self.agent_color == -1:
+            mask_4d = mask_4d[::-1, :, ::-1, :]
+
+        # Возвращаем плоский массив (4096,)
+        return mask_4d.reshape(4096)

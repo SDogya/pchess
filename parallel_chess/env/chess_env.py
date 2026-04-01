@@ -6,7 +6,14 @@ from ..core.board import BoardState, KING
 from ..core.engine import ParallelResolutionEngine
 from ..core.rules import get_pseudo_legal_moves, moves_mask_to_list, encode_move
 
-PIECE_REWARDS = {1: 1, 2: 3, 3: 3, 4: 5, 5: 9, 6: 0}  # king reward handled via termination
+PIECE_REWARDS = {
+    1: 1,
+    2: 3,
+    3: 3,
+    4: 5,
+    5: 9,
+    6: 0,
+}  # king reward handled via termination
 
 
 class SimultaneousChessEnv(gym.Env):
@@ -19,17 +26,18 @@ class SimultaneousChessEnv(gym.Env):
 
     metadata = {"render_modes": ["human", "ansi"]}
 
-    def __init__(self, render_mode: str = None, max_steps: int = 200, starting_fen: str = None):
+    def __init__(
+        self, render_mode: str = None, max_steps: int = 200, starting_fen: str = None
+    ):
         super().__init__()
         self.render_mode = render_mode
         self.max_steps = max_steps
         self.starting_fen = starting_fen
         self.engine = ParallelResolutionEngine()
 
-        move_space = spaces.MultiDiscrete([64, 64])
+        move_space = spaces.Discrete(4096)
         self.observation_space = spaces.Box(low=-6, high=6, shape=(8, 8), dtype=np.int8)
         self.action_space = spaces.Dict({"white": move_space, "black": move_space})
-
         self._board: np.ndarray = None
         self._step_count: int = 0
 
@@ -40,20 +48,31 @@ class SimultaneousChessEnv(gym.Env):
         self._step_count = 0
         return self._board.copy(), {}
 
-    def step(self, action_dict: dict):
-        move_w = tuple(action_dict["white"])
-        move_b = tuple(action_dict["black"])
+    def step(self, action: dict) -> tuple[np.ndarray, float, bool, bool, dict]:
+            # Декодируем скаляр (0-4095) в кортеж (from_sq, to_sq)
+            def _decode(act):
+                if act is None: return None
+                if hasattr(act, "__iter__"): return tuple(act)
+                return (int(act) // 64, int(act) % 64)
 
-        new_board, info = self.engine.resolve_step(self._board, move_w, move_b)
-        self._board = new_board
-        self._step_count += 1
+            move_w = _decode(action.get("white"))
+            move_b = _decode(action.get("black"))
 
-        rewards = self._compute_rewards(info)
-        terminated = info["white_king_dead"] or info["black_king_dead"]
-        truncated = self._step_count >= self.max_steps
+            new_board, info = self.engine.resolve_step(self._board, move_w, move_b)
+            self._board = new_board
+            self._step_count += 1
 
-        obs = self._board.copy()
-        return obs, rewards, terminated, truncated, info
+            # Сохраняем словарь 나град в info, так как Gym требует возвращать одно число (float)
+            info["rewards"] = self._compute_rewards(info)
+
+            # Явное приведение к python bool (чтобы избежать numpy.bool_ и ошибок линтера)
+            terminated = bool(info["white_king_dead"] or info["black_king_dead"])
+            truncated = bool(self._step_count >= self.max_steps)
+
+            obs = self._board.copy()
+            
+            # Возвращаем 0.0 как базовую награду. Настоящая награда достается в wrapper
+            return obs, 0.0, terminated, truncated, info
 
     def _compute_rewards(self, info: dict) -> dict:
         r_w, r_b = 0.0, 0.0
@@ -94,6 +113,7 @@ class SimultaneousChessEnv(gym.Env):
             print(state)
         elif self.render_mode == "human":
             from ..render.visualizer import BoardRenderer
+
             BoardRenderer.render_frame(self._board, {})
 
     @property
