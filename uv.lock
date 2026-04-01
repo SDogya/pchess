@@ -886,6 +886,7 @@ dependencies = [
     { name = "gymnasium" },
     { name = "matplotlib" },
     { name = "numpy" },
+    { name = "sb3-contrib" },
     { name = "stable-baselines3", extra = ["extra"] },
 ]
 
@@ -901,6 +902,7 @@ requires-dist = [
     { name = "gymnasium", specifier = ">=0.29" },
     { name = "matplotlib", specifier = ">=3.8" },
     { name = "numpy", specifier = ">=1.26" },
+    { name = "sb3-contrib", specifier = ">=2.7.1" },
     { name = "sb3-contrib", marker = "extra == 'rl'", specifier = ">=2.3" },
     { name = "stable-baselines3", marker = "extra == 'rl'", specifier = ">=2.3" },
     { name = "stable-baselines3", extras = ["extra"], specifier = ">=2.7.1" },

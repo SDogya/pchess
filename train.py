@@ -10,7 +10,8 @@ Train with SB3 PPO:
 
 import argparse
 import numpy as np
-import gymnasium as gym  
+import gymnasium as gym  # Добавлен недостающий импорт
+import os
 from parallel_chess import (
     SimultaneousChessEnv,
     SingleAgentSelfPlayWrapper,
@@ -19,8 +20,7 @@ from parallel_chess import (
 
 
 def run_demo(n_steps: int = 20, render: bool = True):
-    env = SimultaneousChessEnv(render_mode="human" if render else "ansi",
-                               max_steps=200)
+    env = SimultaneousChessEnv(render_mode="human" if render else "ansi", max_steps=200)
 
     obs, _ = env.reset()
 
@@ -33,13 +33,12 @@ def run_demo(n_steps: int = 20, render: bool = True):
         move_w = legal_w[np.random.randint(len(legal_w))] if legal_w else (0, 0)
         move_b = legal_b[np.random.randint(len(legal_b))] if legal_b else (0, 0)
 
-        # Обрати внимание: второй аргумент теперь _base_reward
+        # Базовая награда теперь float, реальные данные в info
         obs, _base_reward, terminated, truncated, info = env.step({
             "white": move_w,
             "black": move_b
         })
 
-        # Достаем реальные награды из info
         step_rewards = info["rewards"]
         total_rewards["white"] += step_rewards["white"]
         total_rewards["black"] += step_rewards["black"]
@@ -52,7 +51,10 @@ def run_demo(n_steps: int = 20, render: bool = True):
             env.render()
 
         if terminated or truncated:
-            print("Game over!", "White wins" if info["black_king_dead"] else "Black wins" if info["white_king_dead"] else "Draw/Truncated")
+            print(
+                "Game over!", "White wins" if info["black_king_dead"] else
+                "Black wins" if info["white_king_dead"] else "Draw/Truncated"
+            )
             break
 
     print(
@@ -61,7 +63,7 @@ def run_demo(n_steps: int = 20, render: bool = True):
     env.close()
 
 
-def train_ppo(total_timesteps: int = 100_000):
+def train_ppo(total_timesteps: int = 100_000, resume: bool = False):
     try:
         from sb3_contrib import MaskablePPO
         from sb3_contrib.common.wrappers import ActionMasker
@@ -70,37 +72,47 @@ def train_ppo(total_timesteps: int = 100_000):
         return
 
     def mask_fn(env: gym.Env) -> np.ndarray:
-        return env.unwrapped.action_masks()
+        return env.action_masks()
 
     base_env = SimultaneousChessEnv(max_steps=200)
-    # Оборачиваем в SelfPlay
     env = SingleAgentSelfPlayWrapper(base_env, opponent_policy=random_opponent_policy)
-    # Оборачиваем в ActionMasker (жестко блокирует нелегальные ходы)
     env = ActionMasker(env, action_mask_fn=mask_fn)
 
-    model = MaskablePPO(
-        "MlpPolicy",
-        env,
-        verbose=1,
-        n_steps=2048,
-        batch_size=64,
-        n_epochs=10,
-        learning_rate=3e-4,
-    )
-    print("Starting training with MaskablePPO...")
-    model.learn(total_timesteps=total_timesteps)
+    model_path = "ppo_parallel_chess.zip"
+
+    if resume and os.path.exists(model_path):
+        print(f"Loading existing model from {model_path}...")
+        # Загружаем модель и передаем ей текущую среду, чтобы она могла продолжить обучение
+        model = MaskablePPO.load(model_path, env=env)
+    else:
+        print("Creating new MaskablePPO model...")
+        model = MaskablePPO(
+            "MlpPolicy",
+            env,
+            verbose=1,
+            n_steps=2048,
+            batch_size=64,
+            n_epochs=10,
+            learning_rate=3e-4,
+        )
+
+    print(f"Starting training for {total_timesteps} timesteps...")
+    model.learn(total_timesteps=total_timesteps, reset_num_timesteps=not resume)
+    
     model.save("ppo_parallel_chess")
     print("Model saved to ppo_parallel_chess.zip")
 
 
 def _fmt_info(info: dict) -> str:
     parts = []
-    if info["white_illegal"]: parts.append("W_illegal")
-    if info["black_illegal"]: parts.append("B_illegal")
-    if info["mutual_destruction"]: parts.append("MUTUAL_DEST")
-    if info["swap_collision"]: parts.append("SWAP")
-    if info["white_captured"]: parts.append(f"W_cap={info['white_captured']}")
-    if info["black_captured"]: parts.append(f"B_cap={info['black_captured']}")
+    if info.get("white_illegal"): parts.append("W_illegal")
+    if info.get("black_illegal"): parts.append("B_illegal")
+    if info.get("mutual_destruction"): parts.append("MUTUAL_DEST")
+    if info.get("swap_collision"): parts.append("SWAP")
+    if info.get("white_captured"): parts.append(f"W_cap={info['white_captured']}")
+    if info.get("black_captured"): parts.append(f"B_cap={info['black_captured']}")
+    if info.get("white_promoted"): parts.append(f"W_prom={info['white_promoted']}")
+    if info.get("black_promoted"): parts.append(f"B_prom={info['black_promoted']}")
     return " ".join(parts) if parts else "-"
 
 
@@ -108,6 +120,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--demo", action="store_true")
     parser.add_argument("--train", action="store_true")
+    parser.add_argument("--resume", action="store_true", help="Resume training from existing model") # <--- ДОБАВИТЬ
     parser.add_argument("--no-render", action="store_true")
     parser.add_argument("--steps", type=int, default=100_000)
     parser.add_argument("--demo-steps", type=int, default=300)
@@ -116,6 +129,7 @@ if __name__ == "__main__":
     if args.demo:
         run_demo(n_steps=args.demo_steps, render=not args.no_render)
     elif args.train:
-        train_ppo(args.steps)
+        # Передаем args.resume в функцию
+        train_ppo(args.steps, args.resume) 
     else:
         print("Use --demo or --train. See --help.")

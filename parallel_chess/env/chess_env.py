@@ -66,10 +66,21 @@ class SimultaneousChessEnv(gym.Env):
             info["rewards"] = self._compute_rewards(info)
 
             # Явное приведение к python bool (чтобы избежать numpy.bool_ и ошибок линтера)
+            # Явное приведение к python bool
             terminated = bool(info["white_king_dead"] or info["black_king_dead"])
+            
+            # --- ФИКС: Завершаем игру, если кому-то некуда ходить (Пат) ---
+            if not terminated:
+                has_moves_w = np.any(get_pseudo_legal_moves(self._board, 1))
+                has_moves_b = np.any(get_pseudo_legal_moves(self._board, -1))
+                if not has_moves_w or not has_moves_b:
+                    terminated = True
+
             truncated = bool(self._step_count >= self.max_steps)
+           
 
             obs = self._board.copy()
+            
             
             # Возвращаем 0.0 как базовую награду. Настоящая награда достается в wrapper
             return obs, 0.0, terminated, truncated, info

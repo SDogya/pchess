@@ -8,6 +8,7 @@ dependencies = [
     "gymnasium>=0.29",
     "matplotlib>=3.8",
     "stable-baselines3[extra]>=2.7.1",
+    "sb3-contrib>=2.7.1",
 ]
 
 [project.optional-dependencies]

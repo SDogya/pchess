@@ -85,13 +85,15 @@ class SingleAgentSelfPlayWrapper(gym.Wrapper):
     def action_masks(self) -> np.ndarray:
         """Метод, который ищет sb3_contrib.ActionMasker"""
         board = self.env.board
-        # Получаем маску легальных ходов (8, 8, 8, 8)
         mask_4d = get_pseudo_legal_moves(board, self.agent_color)
 
-        # Если играем за черных, нужно перевернуть строки (ranks) в маске,
-        # потому что сеть видит перевернутую доску
         if self.agent_color == -1:
             mask_4d = mask_4d[::-1, :, ::-1, :]
 
-        # Возвращаем плоский массив (4096,)
-        return mask_4d.reshape(4096)
+        flat = mask_4d.reshape(4096)
+        
+        # --- ФИКС КРАША: Предохранитель от пустой маски ---
+        if not np.any(flat):
+            flat[0] = True  # Фиктивный ход, чтобы PyTorch не сошел с ума
+            
+        return flat
